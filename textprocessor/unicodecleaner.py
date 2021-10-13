@@ -10,5 +10,5 @@ class UnicodeCleaner(Pipe):
 
     @staticmethod
     def remove_unicode(data):  # remove non-basic characters and punctuation, but keep hashtags, dashes and underscores
-        pat = r'[^a-zA-z!?/:;#@_\-\"\'\s]'
+        pat = r'[^a-zA-z#@_\-\s]'
         return re.sub(pat, '', data)
