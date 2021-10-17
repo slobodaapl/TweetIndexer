@@ -19,16 +19,16 @@ class DataTransformer:
     def __init__(self):
         self.pipeline = Pipeline([
             LinkRemover(),
-            AccentRemover(),
+            #AccentRemover(),
             UnicodeCleaner(),
             WhitespaceCleaner(),
             ContractionExpander(),
             Tokenizer(),
-            SpellingFixer(),
+            #SpellingFixer(),
             Normalizer(),
             StopwordRemover(),
             WordReplacer(),
-            Lemmatizer(),
+            #Lemmatizer(),
             Stemmer(),
             Validator()
         ])

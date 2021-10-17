@@ -22,4 +22,5 @@ class Validator(Pipe):
         if type(data) is not list:
             raise Exception("Validator expects tokenized list")
 
-        return [word for word in data if self.match_string(word)]
+        data = [word for word in data if self.match_string(word)]
+        return [x for x in data if len(x) >= 1]

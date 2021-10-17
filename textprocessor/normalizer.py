@@ -11,7 +11,7 @@ class Normalizer(Pipe):
     def lowcap(data):  # A -> a
         if type(data) is list:
             for idx, word in enumerate(data):
-                if not word.isupper() or word[0] == '#' or len(word) == 1:
+                if word not in ("US", "WHO", "USA") or word[0] == '#' or len(word) == 1:
                     data[idx] = word.lower()
         else:
             return data.lower()

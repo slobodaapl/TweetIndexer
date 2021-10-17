@@ -1,6 +1,5 @@
 from textprocessor.pipe import Pipe
 import contractions
-import re
 
 
 class ContractionExpander(Pipe):
