@@ -51,7 +51,7 @@ class Indexer:
             raise e
 
     def __indexing(self):
-        for idx, tweet in tqdm(enumerate(self.tweet_file), initial=self.idx_checkpoint, total=316439):
+        for idx, tweet in tqdm(enumerate(self.tweet_file), initial=self.idx_checkpoint, total=176780):
             with DelayedKeyboardInterrupt():
                 self.file_line_index.append(self.checkpoint)
                 self.checkpoint = self.tweet_file.tell()
@@ -113,10 +113,11 @@ class Indexer:
             if word[0] not in ('#', '@'):
                 if word in self.frequency_dict:
                     self.frequency_dict[word] += 1
-                    self.index_dict['text'][word].add(idx)
+                    self.index_dict['text'][word][idx] = token_list.count(word)
                 else:
                     self.frequency_dict[word] = 1
-                    self.index_dict['text'][word] = {idx}
+                    self.index_dict['text'][word] = {}
+                    self.index_dict['text'][word][idx] = token_list.count(word)
             else:
                 if word in self.index_dict[self.__class__.__dec[word[0]]]:
                     self.index_dict[self.__class__.__dec[word[0]]][word].add(idx)

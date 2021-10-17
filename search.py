@@ -13,8 +13,9 @@ class Search:
     def __init__(self):
         print("Loading index, please wait...")
         self.index, self.frequency_index, self.time_index, self.file_index, self.sentiment_index = self.load_dicts()
+        self.n_docs = self.load_n_docs()
         print("Done. Opening data...")
-        self.tweets_file = open('scraped.csv', 'r', encoding='utf-8')
+        self.tweets_file = open('data/hydrated_tweets.csv', 'r', encoding='utf-8')
         print("Done. Setting up text pipeline and sentiment evaluator...")
         self.sentiment_model = TextClassifier.load('en-sentiment')
         self.tf = DataTransformer()
@@ -144,7 +145,7 @@ class Search:
         ls = []
         for word in text:
             if word in self.index['text']:
-                ls.append(self.index['text'][word])
+                ls.append(set(self.index['text'][word].keys()))
 
         return ls
 
@@ -153,7 +154,7 @@ class Search:
         limit = None
 
         for elem in primegrp:
-            self.tweets_file.seek(self.file_index[elem])
+            self.tweets_file.seek(self.file_index[int(elem)])
             tweets.append(self.tweets_file.readline())
 
         if "-l" in instr:
@@ -180,6 +181,11 @@ class Search:
             print("Results:\n")
             for tweet in tweets:
                 print(tweet)
+
+    @staticmethod
+    def load_n_docs():
+        with open('./resources/indexcheckpoint.dat', 'r') as file:
+            return [int(x) for x in file.readline().strip().split(',')][1]
 
     @staticmethod
     def load_dicts():
