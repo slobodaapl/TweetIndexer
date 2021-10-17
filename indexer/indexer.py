@@ -24,7 +24,7 @@ class Indexer:
         self.checkpoint, self.idx_checkpoint = self.__load_checkpoint()
         self.last_check = self.checkpoint
         self.previous_idx = self.idx_checkpoint
-        self.index_dict, self.frequency_dict, self.time_dict, self.file_line_index = self.__load_dicts()
+        self.index_dict, self.frequency_dict, self.time_dict, self.file_line_index, self.term_counts = self.__load_dicts()
         self.tweet_file = file
         self.tweet_file.seek(self.checkpoint)
 
@@ -124,25 +124,31 @@ class Indexer:
                 else:
                     self.index_dict[self.__class__.__dec[word[0]]][word] = {idx}
 
+        self.term_counts[idx] = len(token_list)
+
     def __save_dicts(self):
         with DelayedKeyboardInterrupt():
             with open('./resources/frequency.dat', 'w', encoding='utf-8') as freqfile, \
                     open('./resources/index.dat', 'w', encoding='utf-8') as indexfile, \
                     open('./resources/timeindex.dat', 'w', encoding='utf-8') as timeindexfile, \
+                    open('./resources/termcounts.dat', 'w', encoding='utf-8') as termcountsfile, \
                     open('./resources/fileindex.dat', 'w', encoding='utf-8') as fileindexfile:
                 dump(encode(self.index_dict), indexfile, ensure_ascii=False, separators=(',', ':'))
                 dump(encode(self.frequency_dict), freqfile, ensure_ascii=False, separators=(',', ':'))
                 dump(encode(self.time_dict), timeindexfile, ensure_ascii=False, separators=(',', ':'))
                 dump(encode(self.file_line_index), fileindexfile, ensure_ascii=False, separators=(',', ':'))
+                dump(encode(self.term_counts), termcountsfile, ensure_ascii=False, separators=(',', ':'))
 
     @staticmethod
     def __load_dicts():
         with open('./resources/frequency.dat', 'r', encoding='utf-8') as freqfile, \
                 open('./resources/index.dat', 'r', encoding='utf-8') as indexfile, \
                 open('./resources/timeindex.dat', 'r', encoding='utf-8') as timeindexfile, \
+                open('./resources/termcounts.dat', 'r', encoding='utf-8') as termcountsfile, \
                 open('./resources/fileindex.dat', 'r', encoding='utf-8') as fileindexfile:
             return decode(load(indexfile)), decode(load(freqfile)), \
-                   decode(load(timeindexfile)), decode(load(fileindexfile))
+                   decode(load(timeindexfile)), decode(load(fileindexfile)), \
+                   decode(load(termcountsfile))
 
     @staticmethod
     def __load_checkpoint():

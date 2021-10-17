@@ -3,6 +3,7 @@ from textprocessor.transformer import DataTransformer
 from flair.models import TextClassifier # for evaluation
 from flair.data import Sentence
 from jsonpickle import decode
+import numpy as np
 from json import load
 from time import time
 import random
@@ -12,7 +13,7 @@ class Search:
 
     def __init__(self):
         print("Loading index, please wait...")
-        self.index, self.frequency_index, self.time_index, self.file_index, self.sentiment_index = self.load_dicts()
+        self.index, self.frequency_index, self.time_index, self.file_index, self.sentiment_index, self.term_counts = self.load_dicts()
         self.n_docs = self.load_n_docs()
         print("Done. Opening data...")
         self.tweets_file = open('data/hydrated_tweets.csv', 'r', encoding='utf-8')
@@ -29,7 +30,8 @@ class Search:
     def init(self):
         while (instr := input("\nQUERY: ")) != "":
             t0 = time()
-            groups = []
+            txt_groups = []
+            user_grp = None
 
             if "freq" in instr:
                 self.parse_freq(instr)
@@ -38,41 +40,42 @@ class Search:
                 self.parse_sentiment(instr)
                 continue
             if 'user:' in instr:
-                groups.append(set(self.parse_user(instr)))
+                user_grp = set(self.parse_user(instr))
             if 'text:' in instr:
                 for ls in self.parse_text(instr):
-                    groups.append(set(ls))
+                    txt_groups.append(set(ls))
 
-            if len(groups) >= 2:
-                primegrp = groups[0]
-                for grp in groups[1:]:
-                    primegrp &= grp
-            elif len(groups) == 1:
-                primegrp = groups[0]
-            else:
+            groups = set().union(*txt_groups)
+            if user_grp is not None:
+                if len(groups) != 0:
+                    groups = groups.intersection(user_grp)
+                else:
+                    groups = user_grp
+
+            if len(groups) < 1:
                 print("\nNo matching tweets found, or invalid Query")
                 continue
 
-            self.get_tweets(primegrp, instr)
+            self.get_tweets(groups, instr)
             t1 = time()
             print("\n Time elapsed: {}".format(t1-t0))
 
     def parse_sentiment(self, instr):
         _, user, word = instr.split(":")
-        grps = self.parse_user("user:" + user)
+        user_grp = set(self.parse_user("user:" + user))
+        text_grp = []
         for grp in self.parse_text("text:\"{}\"".format(word)):
-            grps.append(grp)
+            text_grp.append(set([int(x) for x in grp]))
 
-        if len(grps) == 0:
+        if len(user_grp) == 0:
             print("No results")
             return
 
-        primegrp = grps[0]
-        for grp in grps[1:]:
-            primegrp &= grp
+        primegrp = set().union(*text_grp)
+        primegrp = user_grp.intersection(primegrp)
 
         if len(primegrp) == 0:
-            print("User does not exist or user never mentions word")
+            print("User never mentions word in query")
             return
 
         sentiments = [0 for _ in range(len(primegrp))]
@@ -84,7 +87,15 @@ class Search:
             tfline = self.tf(line)
 
             for word in tfline:
-                sentiments[idx] += self.sentiment_index[word]
+                if word in self.sentiment_index:
+                    sentiments[idx] += self.sentiment_index[word]
+                else:
+                    if word.lower() == '#coronavirus':
+                        sentiments[idx] += self.sentiment_index['coronavirus']
+                    else:
+                        sentiments[idx] += 0
+
+            sentiments[idx] /= len(tfline)
 
             sent = Sentence(line)
             self.sentiment_model.predict(sent)
@@ -117,7 +128,8 @@ class Search:
         end_idx = None
         for iidx, letter in enumerate(instr[idx:]):
             if letter == ' ':
-                end_idx = idx + iidx + 1
+                end_idx = idx + iidx
+                break
 
         if end_idx is None:
             user = instr[idx:]
@@ -130,6 +142,16 @@ class Search:
             return None
 
     def parse_text(self, instr):
+        text = self.get_text(instr)
+
+        ls = []
+        for word in text:
+            if word in self.index['text']:
+                ls.append(set(self.index['text'][word].keys()))
+
+        return ls
+
+    def get_text(self, instr):
         idx = instr.find('text:')
         idx += 6
 
@@ -140,22 +162,62 @@ class Search:
                 break
 
         text = instr[idx:end_idx]
-        text = self.tf(text)
+        return self.tf(text)
 
-        ls = []
-        for word in text:
-            if word in self.index['text']:
-                ls.append(set(self.index['text'][word].keys()))
+    @staticmethod
+    def cosine_similarity(word_props, grp):
+        query = []
+        doc = []
 
-        return ls
+        for word in word_props:
+            query.append(word_props[word]['tf_query_norm'] * word_props[word]['idf'])
+            doc.append(word_props[word]['tf_document_norm'][grp] * word_props[word]['idf'])
+
+        if np.sum(query) == 0 or np.sum(doc) == 0:
+            return 0
+
+        res = np.dot(query, doc) / (np.linalg.norm(query) * np.linalg.norm(doc))
+        if np.isnan(res):
+            return 0
+        else:
+            return res
 
     def get_tweets(self, primegrp, instr):
+        word_props = None
         tweets = []
+        debug = {}
         limit = None
 
-        for elem in primegrp:
+        for idx, elem in enumerate(primegrp):
+            debug[elem] = idx
             self.tweets_file.seek(self.file_index[int(elem)])
             tweets.append(self.tweets_file.readline())
+
+        if 'text' in instr:
+            text = self.get_text(instr)
+            word_props = {}
+
+            for word in text:
+                word_props[word] = {}
+                word_props[word]['tf_query_norm'] = text.count(word)/len(text)
+                word_props[word]['tf_document_norm'] = {}
+
+                for grp in primegrp:
+                    if word not in self.index['text'] or grp not in self.index['text'][word]:
+                        word_props[word]['tf_document_norm'][grp] = 0
+                        continue
+
+                    word_props[word]['tf_document_norm'][grp] = self.index['text'][word][grp]/self.term_counts[grp]
+
+                if word in self.index['text']:
+                    word_props[word]['idf'] = 1 + np.log((self.n_docs+1) / (len(self.index['text'][word])+1))
+                else:
+                    word_props[word]['idf'] = 1
+
+        if word_props is not None:
+            for idx, (grp, tweet) in enumerate(zip(primegrp, tweets)):
+                tweets[idx] = (tweet, "{}%".format(100 * round(self.cosine_similarity(word_props, grp), 3)))
+            tweets = list(reversed(sorted(tweets, key=lambda x: x[1])))
 
         if "-l" in instr:
             idx = instr.find('-l')
@@ -172,11 +234,14 @@ class Search:
                 limit = int(instr[idx:endidx])
 
         if limit is not None:
-            tweets = random.sample(tweets, limit)
+            limit = min(limit, len(tweets))
+            tweets = tweets[:limit]
 
         if "-o" in instr:
             with open('output.csv', 'w') as file:
                 file.writelines(tweets)
+        elif "-c" in instr:
+            print("Found {} tweets".format(len(tweets)))
         else:
             print("Results:\n")
             for tweet in tweets:
@@ -192,17 +257,19 @@ class Search:
         with open('./resources/frequency.dat', 'r', encoding='utf-8') as freqfile, \
                 open('./resources/index.dat', 'r', encoding='utf-8') as indexfile, \
                 open('./resources/timeindex.dat', 'r', encoding='utf-8') as timeindexfile, \
-                open('./resources/fileindex.dat', 'r', encoding='utf-8') as fileindexfile, \
-                open('./resources/sentimentdict.dat', 'r', encoding='utf-8') as sentiindexfile:
+                open('./resources/sentimentdict.dat', 'r', encoding='utf-8') as sentimentindexfile, \
+                open('./resources/termcounts.dat', 'r', encoding='utf-8') as termcountsfile, \
+                open('./resources/fileindex.dat', 'r', encoding='utf-8') as fileindexfile:
 
             return decode(load(indexfile)), decode(load(freqfile)), \
-                   decode(load(timeindexfile)), decode(load(fileindexfile)), decode(load(sentiindexfile))
+                   decode(load(timeindexfile)), decode(load(fileindexfile)), \
+                   decode(load(sentimentindexfile)), decode(load(termcountsfile))
 
 
 def primitive_search(text):
     print("Results: \n")
     t0 = time()
-    with open('scraped.csv', 'r') as file:
+    with open('data/hydrated_tweets.csv', 'r') as file:
         for line in file:
             if text in line:
                 print(line)
